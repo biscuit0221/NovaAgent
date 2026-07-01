@@ -1,0 +1,28 @@
+# Maven / Java
+target/
+*.class
+*.jar
+hs_err_pid*
+replay_pid*
+
+# Logs
+*.log
+logs/
+.novaagent-logs/
+
+# IntelliJ / Eclipse
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# macOS
+.DS_Store
+
+# NovaAgent local runtime data
+.novaagent/
+
+# Secrets (never commit keys)
+.env
