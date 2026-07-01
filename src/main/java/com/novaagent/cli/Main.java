@@ -104,7 +104,7 @@ public final class Main {
                         terminal.flush();
                     }
                     case CONFIG -> handleConfig(cfg, llm, projectRoot);
-                    case MODEL -> System.out.println("[novaagent] Phase 1 does not switch models at runtime. Edit ~/.novaagent/config.properties and restart.");
+                    case MODEL -> System.out.println("[novaagent] Phase 1 does not switch models at runtime. Edit .env in the project root and restart.");
                     case EXIT, QUIT -> { System.out.println(Ansi.cyan("Bye!")); return; }
                     case UNKNOWN -> {
                         if (parsed.arg.isBlank()) {
