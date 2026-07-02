@@ -5,6 +5,10 @@ import com.novaagent.agent.SystemPrompt;
 import com.novaagent.llm.LlmClient;
 import com.novaagent.llm.OpenAiCompatibleClient;
 import com.novaagent.llm.ToolSpec;
+import com.novaagent.plan.Plan;
+import com.novaagent.plan.PlanExecutor;
+import com.novaagent.plan.PlannerAgent;
+import com.novaagent.plan.Step;
 import com.novaagent.tool.CreateProjectTool;
 import com.novaagent.tool.ExecuteCommandTool;
 import com.novaagent.tool.GlobFilesTool;
@@ -60,8 +64,9 @@ public final class Main {
                 llm, tools, systemPrompt,
                 Integer.parseInt(cfg.get("agent.maxSteps", "8")),
                 Integer.parseInt(cfg.get("agent.maxToolOutputChars", "4000")));
+        PlannerAgent planner = (llm == null) ? null : new PlannerAgent(llm);
 
-        Banner.print(cfg.model(), "ReAct");
+        Banner.print(cfg.model(), "ReAct · Plan");
 
         if (args.length > 0) {
             String a = args[0];
@@ -104,7 +109,16 @@ public final class Main {
                         terminal.flush();
                     }
                     case CONFIG -> handleConfig(cfg, llm, projectRoot);
-                    case MODEL -> System.out.println("[novaagent] Phase 1 does not switch models at runtime. Edit .env in the project root and restart.");
+                    case MODEL -> System.out.println("[novaagent] Phase 2 still does not switch models at runtime. Edit .env in the project root and restart.");
+                    case PLAN -> {
+                        if (planner == null || agent == null) {
+                            System.out.println(Ansi.red("[novaagent] Agent not ready: configure NOVAAGENT_API_KEY first."));
+                        } else if (parsed.arg.isBlank()) {
+                            System.out.println("usage: /plan <task description>");
+                        } else {
+                            runPlanned(agent, planner, parsed.arg, reader);
+                        }
+                    }
                     case EXIT, QUIT -> { System.out.println(Ansi.cyan("Bye!")); return; }
                     case UNKNOWN -> {
                         if (parsed.arg.isBlank()) {
@@ -204,13 +218,90 @@ public final class Main {
         System.out.println();
     }
 
+    private static void runPlanned(Agent agent, PlannerAgent planner, String task, LineReader reader) {
+        System.out.println(Ansi.dim("  /plan > " + task));
+        System.out.println(Ansi.dim("  generating plan..."));
+        Plan plan;
+        try {
+            plan = planner.plan(task);
+        } catch (PlannerAgent.PlanParseException ex) {
+            System.out.println(Ansi.red("  [novaagent] planner failed: " + ex.getMessage()));
+            return;
+        } catch (IllegalArgumentException ex) {
+            System.out.println(Ansi.red("  [novaagent] planner produced an invalid plan: " + ex.getMessage()));
+            return;
+        }
+
+        printPlan(plan);
+
+        String confirm = readConfirmation(reader);
+        if (confirm == null) return;
+        if (!confirm.equals("y") && !confirm.equals("yes")) {
+            System.out.println(Ansi.dim("  plan cancelled."));
+            return;
+        }
+        System.out.println();
+
+        PlanExecutor executor = new PlanExecutor(agent);
+        java.util.Map<String, String> outputs = executor.execute(plan, ev -> {
+            switch (ev.type) {
+                case START -> System.out.println(Ansi.cyan("  ▶ " + ev.step.id + " " + ev.step.title));
+                case DELTA -> { /* silent: streaming goes through Agent.run's own delta path normally; planner output is non-streaming */ }
+                case DONE -> {
+                    System.out.println(Ansi.green("  ✓ " + ev.step.id + " done"));
+                    String body = ev.payload == null ? "" : ev.payload;
+                    String rendered = MarkdownRenderer.render(body);
+                    for (String l : rendered.split("\\R", -1)) System.out.println("    " + l);
+                }
+                case FAIL -> System.out.println(Ansi.red("  ✗ " + ev.step.id + " failed: " + ev.payload));
+            }
+        });
+
+        if (outputs.size() < plan.topoOrder().size()) {
+            System.out.println(Ansi.yellow("  [novaagent] plan stopped early; " + outputs.size() + "/" + plan.topoOrder().size() + " steps completed."));
+        } else {
+            System.out.println(Ansi.green("  [novaagent] plan complete (" + outputs.size() + " steps)."));
+        }
+        System.out.println();
+    }
+
+    private static void printPlan(Plan plan) {
+        System.out.println();
+        System.out.println(Ansi.bold("  Generated plan"));
+        if (plan.isDag()) {
+            System.out.println(Ansi.dim("  (dependency graph: not a strict chain)"));
+        }
+        for (Step step : plan.steps) {
+            String deps = step.dependsOn.isEmpty() ? "" : "  ← depends on " + String.join(", ", step.dependsOn);
+            System.out.println("  " + Ansi.cyan(step.id) + "  " + Ansi.bold(step.title) + Ansi.dim(deps));
+            if (!step.goal.isBlank()) {
+                String g = step.goal;
+                for (String l : g.split("\\R", -1)) System.out.println(Ansi.dim("      " + l));
+            }
+        }
+        System.out.println();
+        System.out.println(Ansi.bold("  Confirm execution?"));
+    }
+
+    private static String readConfirmation(LineReader reader) {
+        try {
+            String line = reader.readLine(Ansi.cyan("  y/n >") + " ");
+            if (line == null) return null;
+            return line.trim().toLowerCase(java.util.Locale.ROOT);
+        } catch (org.jline.reader.UserInterruptException ex) {
+            System.out.println("^C");
+            return null;
+        }
+    }
+
     private static void printHelp() {
-        String help = Ansi.bold("NovaAgent · Phase 1 commands") + "\n"
+        String help = Ansi.bold("NovaAgent · Phase 2 commands") + "\n"
             + "  /help            show this help\n"
             + "  /tools           list registered tools\n"
             + "  /tools <name>    show a tool's parameter schema\n"
             + "  /config          show current configuration (API key masked)\n"
-            + "  /model <name>    switch model (Phase 1: requires restart)\n"
+            + "  /model <name>    switch model (Phase 2: requires restart)\n"
+            + "  /plan <task>     decompose <task> into a DAG, confirm, then execute step by step\n"
             + "  /clear           clear the screen\n"
             + "  /exit | /quit    quit\n"
             + "\nAny other input is sent to the ReAct agent. Try:\n"

@@ -18,7 +18,7 @@ public final class Banner {
     public static void print(String model, String mode) {
         for (String line : LINES) System.out.println(Ansi.cyan(line));
         System.out.println();
-        System.out.println(Ansi.brightCyan("              NovaAgent v0.1.0  -  Phase 1 (ReAct)"));
+        System.out.println(Ansi.brightCyan("              NovaAgent v0.2.0  -  Phase 2 (ReAct + Plan)"));
         System.out.println(Ansi.dim("              Model: " + model + "   Mode: " + mode));
         System.out.println();
     }

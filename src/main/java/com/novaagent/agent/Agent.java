@@ -41,11 +41,26 @@ public final class Agent {
     }
 
     public List<ChatMessage> run(String userInput, Consumer<String> streamDelta) {
+        return run(userInput, null, streamDelta);
+    }
+
+    /**
+     * Variant of {@link #run(String, Consumer)} that lets the caller prepend
+     * a system-prompt override for this single run. Used by
+     * {@code com.novaagent.plan.PlanExecutor} so each plan step can carry
+     * a "you are executing step N of a plan" prefix on top of the
+     * project-wide ReAct system prompt, without mutating the agent's
+     * shared state.
+     */
+    public List<ChatMessage> run(String userInput, String systemPromptOverride, Consumer<String> streamDelta) {
         if (userInput == null || userInput.isBlank()) {
             throw new IllegalArgumentException("userInput must not be empty");
         }
+        String effectiveSystemPrompt = (systemPromptOverride == null || systemPromptOverride.isBlank())
+            ? systemPrompt
+            : systemPromptOverride + "\n\n" + systemPrompt;
         List<ChatMessage> history = new ArrayList<>();
-        history.add(ChatMessage.system(systemPrompt));
+        history.add(ChatMessage.system(effectiveSystemPrompt));
         history.add(ChatMessage.user(userInput));
 
         List<ToolSpec> specs = tools.toolSpecs();

@@ -10,6 +10,7 @@ public final class CliCommandParser {
         CLEAR("clear"),
         CONFIG("config"),
         MODEL("model"),
+        PLAN("plan"),
         EXIT("exit"),
         QUIT("quit"),
         UNKNOWN("unknown");

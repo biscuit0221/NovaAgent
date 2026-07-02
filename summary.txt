@@ -1,0 +1,2 @@
+mvn clean package -DskipTests 只是跳过了测试的内容，进行打jar包，目前项目Phase1没有test内容，这样会更快一点，正常的话用mvn clean package就可以
+
